@@ -1,3 +1,5 @@
+from rich.theme import Theme
+
 LEVEL_TAG_COLORS = {
         "SUCCESS": "grey89 on chartreuse4",
         "TRACE": "grey89 on blue",
