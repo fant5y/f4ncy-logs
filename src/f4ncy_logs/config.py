@@ -9,7 +9,7 @@ from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
 from rich_toolkit.styles import TaggedStyle
 
-from src.f4ancy_logs.constants import CUSTOM_THEME, FORMAT_PREFIX, LEVEL_TAG_COLORS, OPENERS
+from f4ncy_logs.constants import CUSTOM_THEME, FORMAT_PREFIX, LEVEL_TAG_COLORS, OPENERS
 
 if TYPE_CHECKING:
     import loguru
