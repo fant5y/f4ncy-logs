@@ -1,13 +1,13 @@
 import ast
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 
 from loguru import logger
 from rich.console import ColorSystem
 from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
-from rich_toolkit.styles import TaggedStyle
+from rich_toolkit.styles import BaseStyle, BorderedStyle, FancyStyle, MinimalStyle, TaggedStyle
 
 from f4ncy_logs.constants import CUSTOM_THEME, FORMAT_PREFIX, LEVEL_TAG_COLORS, OPENERS
 
@@ -17,7 +17,39 @@ if TYPE_CHECKING:
 logger.remove()  # Remove default handler and prevent duplicate log output.
 
 
-def _get_rich_toolkit(level_name: str) -> RichToolkit:
+def _get_print_style(print_style: Literal['borderd', 'minimal', 'fancy', 'tagged', 'base'],
+                     tag_width: int = 12,
+                     ) -> Any:
+    styles = CUSTOM_THEME.styles
+
+    match print_style:
+        case "borderd" | "bordered":
+            style = BorderedStyle()
+        case "minimal":
+            style = MinimalStyle(theme=styles)
+        case "fancy":
+            style = FancyStyle(theme=styles)
+        case "tagged":
+            style = TaggedStyle(theme=styles, tag_width=tag_width)
+        case 'base':
+            style = BaseStyle(theme=styles)
+        case _:
+            style = BaseStyle(theme=styles)
+
+    return style
+
+
+def initialize_rich_toolkit_theme(tag_color: str | None = '') -> RichToolkitTheme:
+    theme = {**CUSTOM_THEME.styles}
+    if tag_color:
+        theme["tag"] = tag_color
+    return RichToolkitTheme(
+            style=_get_print_style('tagged'),
+            theme=theme,
+            )
+
+
+def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
     """Build a RichToolkit instance themed for the given log level.
 
     Parameters
@@ -30,11 +62,9 @@ def _get_rich_toolkit(level_name: str) -> RichToolkit:
     RichToolkit
         Configured toolkit instance with forced terminal color output.
     """
-    tag_color = LEVEL_TAG_COLORS.get(level_name, "grey89 on grey30")
-    theme = RichToolkitTheme(
-            style=TaggedStyle(tag_width=12),
-            theme={**CUSTOM_THEME.styles, "tag": tag_color},
-            )
+    tag_color = LEVEL_TAG_COLORS.get(level_name, "grey89 on grey30",
+                                     ) if level_name else "grey89 on grey30"
+    theme = initialize_rich_toolkit_theme(tag_color)
     rtk = RichToolkit(theme=theme)
     rtk.console._force_terminal = True
     rtk.console._color_system = ColorSystem.TRUECOLOR
@@ -181,3 +211,24 @@ def get_logger(logfile: str | Path, level: str = "INFO", ) -> "loguru.Logger":
             colorize=True,
             )
     return logger
+
+
+def f4ncy_print(message: str, title: str | None = '',
+                print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal",
+                end: str = "\n",
+                **metadata: Any,
+                ) -> None:
+    style = _get_print_style(print_style)
+    with RichToolkit(style=style) as rtk:
+        if title:
+            rtk.print_title(title)
+            if print_style == 'fancy':
+                rtk.print_line()
+        rtk.print(message, end, **metadata)
+        rtk.print_line()
+
+
+def rtk(print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal", ) -> Generator[
+    RichToolkit, None, None]:
+    with RichToolkit(style=_get_print_style(print_style)) as rtk:
+        yield rtk
