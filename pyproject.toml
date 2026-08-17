@@ -1,15 +1,17 @@
 [project]
 name = "f4ncy-logs"
-version = "0.1.7"
+version = "0.1.9"
 requires-python = ">=3.13"
 dependencies = [
     "loguru",
-    "matplotlib>=3.11.1",
-    "numpy>=2.5.2",
-    "opencv-python>=5.0.0.93",
-    "pyrefly>=0.45.0",
     "rich",
     "rich-toolkit",
+    "tzdata"
+]
+
+[dependency-groups]
+dev = [
+    "pyrefly>=0.45.0",
 ]
 
 [build-system]
