@@ -1,5 +1,6 @@
 import ast
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Literal, TYPE_CHECKING
 
@@ -7,7 +8,11 @@ from loguru import logger
 from rich.console import ColorSystem
 from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
-from rich_toolkit.styles import BaseStyle, BorderedStyle, FancyStyle, MinimalStyle, TaggedStyle
+from rich_toolkit.styles import BaseStyle,\
+    BorderedStyle,\
+    FancyStyle,\
+    MinimalStyle,\
+    TaggedStyle
 
 from f4ncy_logs.constants import CUSTOM_THEME, FORMAT_PREFIX, LEVEL_TAG_COLORS, OPENERS
 
@@ -17,7 +22,8 @@ if TYPE_CHECKING:
 logger.remove()  # Remove default handler and prevent duplicate log output.
 
 
-def _get_print_style(print_style: Literal['borderd', 'minimal', 'fancy', 'tagged', 'base'],
+def _get_print_style(print_style: Literal[
+    'borderd', 'minimal', 'fancy', 'tagged', 'base'],
                      tag_width: int = 12,
                      ) -> Any:
     styles = CUSTOM_THEME.styles
@@ -184,13 +190,18 @@ def _custom_formatter(record: "loguru.Record") -> str:
                 if text_after:
                     content.append(rtk.print_as_string(text_after, tag=""))
     except Exception as formatter_exc:
-        with _get_rich_toolkit("ERROR") as rtk:
-            content.append(
-                    rtk.print_as_string(
-                            f"[error]Formatter error: {formatter_exc}[/error]",
-                            tag="💀 Error",
-                            ),
-                    )
+        try:
+            with _get_rich_toolkit("ERROR") as rtk:
+                content.append(
+                        rtk.print_as_string(
+                                f"[error]Formatter error: {formatter_exc}[/error]",
+                                tag="💀 Error",
+                                ),
+                        )
+        except Exception as e:
+            print(f"Original error: {formatter_exc}\nLogger had caused an error: {e}",
+                  file=sys.stderr,
+                  )
 
     record["extra"]["_rendered"] = "\n".join(content)
     return FORMAT_PREFIX + "{extra[_rendered]}\n"
@@ -218,17 +229,22 @@ def f4ncy_print(message: str, title: str | None = '',
                 end: str = "\n",
                 **metadata: Any,
                 ) -> None:
-    style = _get_print_style(print_style)
-    with RichToolkit(style=style) as rtk:
+    theme = RichToolkitTheme(
+            style=_get_print_style(print_style),
+            theme={**CUSTOM_THEME.styles},
+            )
+    with RichToolkit(theme=theme) as rtk:
+        rtk.console._force_terminal = True
+        rtk.console._color_system = ColorSystem.TRUECOLOR
         if title:
-            rtk.print_title(title)
+            rtk.print_title(f"[bold]{title}[/bold]")
             if print_style == 'fancy':
                 rtk.print_line()
-        rtk.print(message, end, **metadata)
+        rtk.console.print(message, end, **metadata)
         rtk.print_line()
 
 
-def rtk(print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal", ) -> Generator[
-    RichToolkit, None, None]:
+def rtk(print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal", ) ->\
+        Generator[RichToolkit]:
     with RichToolkit(style=_get_print_style(print_style)) as rtk:
         yield rtk
