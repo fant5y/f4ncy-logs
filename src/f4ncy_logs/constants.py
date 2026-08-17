@@ -13,8 +13,10 @@ LEVEL_TAG_COLORS = {
         }
 CUSTOM_THEME = Theme(
         {
-                "success": "grey89 on chartreuse4",
-                "error": "grey89 on dark_red",
+                "success": LEVEL_TAG_COLORS["SUCCESS"],
+                "error": LEVEL_TAG_COLORS["ERROR"],
+                "info": LEVEL_TAG_COLORS["INFO"],
+                "warning": LEVEL_TAG_COLORS["WARNING"],
                 "tag": "grey89 on grey30",
                 "tag.title": "grey11 on #d939ae",
                 "text": "white",
