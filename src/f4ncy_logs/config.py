@@ -2,9 +2,9 @@ import ast
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Any, Literal, TextIO, TYPE_CHECKING
 
-from loguru import logger
+from loguru import logger, Message, Writable
 from rich.console import ColorSystem
 from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
@@ -71,10 +71,10 @@ def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
     tag_color = LEVEL_TAG_COLORS.get(level_name, "grey89 on grey30",
                                      ) if level_name else "grey89 on grey30"
     theme = initialize_rich_toolkit_theme(tag_color)
-    rtk = RichToolkit(theme=theme)
-    rtk.console._force_terminal = True
-    rtk.console._color_system = ColorSystem.TRUECOLOR
-    return rtk
+    rich_tk = RichToolkit(theme=theme)
+    rich_tkt.console._force_terminal = True
+    rich_tkt.console._color_system = ColorSystem.TRUECOLOR
+    return rich_tk
 
 
 def _find_matching_close(text: str, open_idx: int) -> int | None:
@@ -207,7 +207,10 @@ def _custom_formatter(record: "loguru.Record") -> str:
     return FORMAT_PREFIX + "{extra[_rendered]}\n"
 
 
-def get_logger(logfile: str | Path, level: str = "INFO", ) -> "loguru.Logger":
+def get_logger(logfile: str | Path,
+               level: str = "INFO",
+               sink: TextIO | Writable | (Message) = sys.stdout, **kwargs,
+               ) -> "loguru.Logger":
 
     logger.remove()
     logger.add(
@@ -215,12 +218,13 @@ def get_logger(logfile: str | Path, level: str = "INFO", ) -> "loguru.Logger":
             level="TRACE",
             colorize=False,
             )
-    logger.add(
-            sys.stdout,
-            level=level,
-            format=_custom_formatter,
-            colorize=True,
-            )
+    logger_conf = dict(sink=sink,
+                       level=level,
+                       format=_custom_formatter,
+                       colorize=True,
+                       ) | (kwargs or {})
+
+    logger.add(**logger_conf)
     return logger
 
 
