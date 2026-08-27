@@ -26,7 +26,7 @@ logger.remove()  # Remove default handler and prevent duplicate log output.
 def _get_print_style(print_style: Literal[
     'borderd', 'minimal', 'fancy', 'tagged', 'base'],
                      tag_width: int = 12,
-                     ) -> Any:
+                     ) -> type[BaseStyle]:
     styles = CUSTOM_THEME.styles
 
     match print_style:
@@ -72,10 +72,10 @@ def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
     tag_color = LEVEL_TAG_COLORS.get(level_name, "grey89 on grey30",
                                      ) if level_name else "grey89 on grey30"
     theme = initialize_rich_toolkit_theme(tag_color)
-    rich_tk = RichToolkit(theme=theme)
+    rich_tkt = RichToolkit(theme=theme)
     rich_tkt.console._force_terminal = True
     rich_tkt.console._color_system = ColorSystem.TRUECOLOR
-    return rich_tk
+    return rich_tkt
 
 
 def _find_matching_close(text: str, open_idx: int) -> int | None:
@@ -219,11 +219,12 @@ def get_logger(logfile: str | Path,
             level="TRACE",
             colorize=False,
             )
-    logger_conf = dict(sink=sink,
-                       level=level,
-                       format=_custom_formatter,
-                       colorize=True,
-                       ) | (kwargs or {})
+    logger_conf = {
+                          "sink": sink,
+                          "level": level,
+                          "format": _custom_formatter,
+                          "colorize": True,
+                          } | (kwargs or {})
 
     logger.add(**logger_conf)
     return logger
