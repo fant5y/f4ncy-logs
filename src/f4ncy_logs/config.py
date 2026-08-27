@@ -7,6 +7,7 @@ from typing import Any, Literal, TextIO, TYPE_CHECKING
 from loguru import logger
 from loguru._handler import Message
 from rich.console import ColorSystem
+from rich.markup import escape
 from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
 from rich_toolkit.styles import BaseStyle,\
@@ -26,7 +27,7 @@ logger.remove()  # Remove default handler and prevent duplicate log output.
 def _get_print_style(print_style: Literal[
     'borderd', 'minimal', 'fancy', 'tagged', 'base'],
                      tag_width: int = 12,
-                     ) -> type[BaseStyle]:
+                     ) -> BorderedStyle | MinimalStyle | FancyStyle | TaggedStyle | BaseStyle:
     styles = CUSTOM_THEME.styles
 
     match print_style:
@@ -230,24 +231,99 @@ def get_logger(logfile: str | Path,
     return logger
 
 
-def f4ncy_print(message: str, title: str | None = '',
+def f4ncy_print(message: str, title: str = '',
                 print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal",
                 end: str = "\n",
                 **metadata: Any,
                 ) -> None:
-    theme = RichToolkitTheme(
-            style=_get_print_style(print_style),
-            theme={**CUSTOM_THEME.styles},
-            )
-    with RichToolkit(theme=theme) as rtk:
+    """Print a formatted message to the console using a customizable print style and theme.
+
+    The function supports multiple print styles, including "fancy", "minimal", "bordered",
+    and "tagged." If a title is provided, it gets printed in bold at the start. Developers
+    can also pass additional metadata to control the rich text formatting.
+
+    Parameters
+    ----------
+    message : str
+        The main content to display in the console output.
+    title : str, optional
+        An optional title to display above the main message. Defaults to an empty string.
+    print_style : Literal['fancy', 'minimal', 'borderd', 'tagged'], optional
+        Specifies the style of the printed message. Defaults to "minimal".
+    end : str, optional
+        The string appended after the message. Defaults to newline ("\n").
+    metadata : Any
+        Additional formatting options passed to the underlying rich text rendering framework.
+
+    Returns
+    -------
+    None
+    """
+    theme = generate_toolkit_theme(print_style)
+    with RichToolkit(theme=theme, handle_keyboard_interrupts=True) as rtk:
         rtk.console._force_terminal = True
         rtk.console._color_system = ColorSystem.TRUECOLOR
         if title:
             rtk.print_title(f"[bold]{title}[/bold]")
             if print_style == 'fancy':
                 rtk.print_line()
-        rtk.console.print(message, end, **metadata)
+        try:
+            rtk.console.print(message, end, **metadata)
+            rtk.print_line()
+        except Exception as e:
+            rtk.console.print(escape(str(message)), end, **metadata)
+            rtk.print_line()
+
+
+def f4ncy_log(message: str, title: str = '',
+              print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal",
+              end: str = "\n",
+              **metadata: Any,
+              ) -> None:
+    """Print a formatted message to the console using a customizable print style and theme.
+
+    The function supports multiple print styles, including "fancy", "minimal", "bordered",
+    and "tagged." If a title is provided, it gets printed in bold at the start. Developers
+    can also pass additional metadata to control the rich text formatting.
+
+    Parameters
+    ----------
+    message : str
+        The main content to display in the console output.
+    title : str, optional
+        An optional title to display above the main message. Defaults to an empty string.
+    print_style : Literal['fancy', 'minimal', 'borderd', 'tagged'], optional
+        Specifies the style of the printed message. Defaults to "minimal".
+    end : str, optional
+        The string appended after the message. Defaults to newline ("\n").
+    metadata : Any
+        Additional formatting options passed to the underlying rich text rendering framework.
+
+    Returns
+    -------
+    None
+    """
+    theme = generate_toolkit_theme(print_style)
+    with RichToolkit(theme=theme) as rtk:
+        rtk.console._force_terminal = True
+        rtk.console._color_system = ColorSystem.TRUECOLOR
+        if title:
+            rtk.print_title(f"[bold]{escape(str(title))}[/bold]")
+            if print_style == 'fancy':
+                rtk.print_line()
+        try:
+            rtk.console.log(message, end, **metadata)
+        except Exception as e:
+            rtk.console.log(escape(str(message)), end, **metadata)
         rtk.print_line()
+
+
+def generate_toolkit_theme(print_style) -> RichToolkitTheme:
+    theme = RichToolkitTheme(
+            style=_get_print_style(print_style),
+            theme={**CUSTOM_THEME.styles},
+            )
+    return theme
 
 
 def rtk(print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal", ) ->\
