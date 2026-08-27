@@ -4,7 +4,8 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Literal, TextIO, TYPE_CHECKING
 
-from loguru import logger, Message, Writable
+from loguru import logger
+from loguru._handler import Message
 from rich.console import ColorSystem
 from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
@@ -209,7 +210,7 @@ def _custom_formatter(record: "loguru.Record") -> str:
 
 def get_logger(logfile: str | Path,
                level: str = "INFO",
-               sink: TextIO | Writable | (Message) = sys.stdout, **kwargs,
+               sink: TextIO | str | (Message) = sys.stdout, **kwargs,
                ) -> "loguru.Logger":
 
     logger.remove()
