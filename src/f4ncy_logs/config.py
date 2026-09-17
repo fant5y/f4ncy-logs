@@ -1,15 +1,19 @@
-import ast
 import sys
+import ast
+
+from pathlib import Path
 from collections.abc import Generator
 from contextlib import suppress
-from pathlib import Path
-from typing import Any, Literal, TextIO, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal, TextIO
 
-from loguru import logger
-from loguru._handler import Message
+import rich.pretty
+
 from rich.console import ColorSystem
 from rich.markup import escape
 from rich.pretty import Pretty
+
+from loguru import logger
+from loguru._handler import Message
 from rich_toolkit import RichToolkit, RichToolkitTheme
 from rich_toolkit.styles import (
     BaseStyle,
@@ -17,7 +21,7 @@ from rich_toolkit.styles import (
     FancyStyle,
     MinimalStyle,
     TaggedStyle,
-    )
+)
 
 from f4ncy_logs.constants import (
     _PARSABLE_OBJECT_TYPES,
@@ -27,7 +31,7 @@ from f4ncy_logs.constants import (
     MESSAGE_INDENT,
     OPENERS,
     VAR_NAME_PATTERN,
-    )
+)
 
 if TYPE_CHECKING:
     import loguru
@@ -36,9 +40,9 @@ logger.remove()  # Remove default handler and prevent duplicate log output.
 
 
 def _get_print_style(
-        print_style: Literal["borderd", "minimal", "fancy", "tagged", "base"],
-        tag_width: int = MESSAGE_INDENT,
-        ) -> BorderedStyle | MinimalStyle | FancyStyle | TaggedStyle | BaseStyle:
+    print_style: Literal["borderd", "minimal", "fancy", "tagged", "base"],
+    tag_width: int = MESSAGE_INDENT,
+) -> BorderedStyle | MinimalStyle | FancyStyle | TaggedStyle | BaseStyle:
     styles = CUSTOM_THEME.styles
 
     match print_style:
@@ -63,9 +67,9 @@ def initialize_rich_toolkit_theme(tag_color: str | None = "") -> RichToolkitThem
     if tag_color:
         theme["tag"] = tag_color
     return RichToolkitTheme(
-            style=_get_print_style("tagged"),
-            theme=theme,
-            )
+        style=_get_print_style("tagged"),
+        theme=theme,
+    )
 
 
 def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
@@ -82,12 +86,12 @@ def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
         Configured toolkit instance with forced terminal color output.
     """
     tag_color = (
-            LEVEL_TAG_COLORS.get(
-                    level_name,
-                    "grey89 on grey30",
-                    )
-            if level_name
-            else "grey89 on grey30"
+        LEVEL_TAG_COLORS.get(
+            level_name,
+            "grey89 on grey30",
+        )
+        if level_name
+        else "grey89 on grey30"
     )
     theme = initialize_rich_toolkit_theme(tag_color)
     rich_tkt = RichToolkit(theme=theme)
@@ -97,8 +101,11 @@ def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
 
 
 def _find_closing_bracket(
-        text: str, start_idx: int, opener: str, closer: str,
-        ) -> int | None:
+    text: str,
+    start_idx: int,
+    opener: str,
+    closer: str,
+) -> int | None:
     """Find the index of the closing bracket matching the opener at open_idx.
 
     Parameters
@@ -122,15 +129,14 @@ def _find_closing_bracket(
         elif char == closer:
             depth -= 1 if depth > 0 else 0
             if depth == 0:
-                rtk.console.print(f"Depth is 0! {idx = } | {char = }")
                 return idx + 1
 
     return None
 
 
 def _find_python_objects_in_message(
-        raw_message: str,
-        ) -> Generator[tuple[int, int, object]]:
+    raw_message: str,
+) -> Generator[tuple[int, int, object]]:
     """Find ALL parseable Python objects in raw_message."""
     extracted_obj = ""
     extracted_objs = []
@@ -149,11 +155,12 @@ def _find_python_objects_in_message(
             continue
 
         if not (
-                end_index := _find_closing_bracket(raw_message,
-                                                   start_index,
-                                                   opener,
-                                                   closer,
-                                                   )
+            end_index := _find_closing_bracket(
+                raw_message,
+                start_index,
+                opener,
+                closer,
+            )
         ):
             continue
 
@@ -192,30 +199,24 @@ def _custom_formatter(record: "loguru.Record") -> str:
     content = []
 
     rtk = _get_rich_toolkit(level_name)
-    pretty_rtk = RichToolkit(theme=initialize_rich_toolkit_theme(),
-                             style=_get_print_style('borderd'),
-                             )
+    pretty_rtk = RichToolkit(
+        theme=initialize_rich_toolkit_theme(),
+        style=_get_print_style("fancy"),
+    )
     try:
         prev_end_idx = 0
         started = False
         for start_idx, end_idx, parsed_object in _find_python_objects_in_message(
-                raw_message,
-                ):
+            raw_message,
+        ):
             if not parsed_object:
                 content.append(
-                        rtk.print_as_string(f"{idt}{raw_message!s}", tag=level_label)
-                        )
+                    rtk.print_as_string(f"{idt}{raw_message!s}", tag=level_label)
+                )
                 continue
 
             start_idx = max(start_idx, 0)
             end_idx = min(end_idx, last_index)
-
-            rtk.console.log(
-                    f"{start_idx=} | {end_idx=} | {prev_end_idx=} | {last_index=}",
-                    )
-            rtk.console.log(
-                    f"{raw_message[start_idx]=} | {raw_message[end_idx]=} | {raw_message[prev_end_idx]=}",
-                    )
 
             if started:
                 level_label = ""
@@ -227,23 +228,27 @@ def _custom_formatter(record: "loguru.Record") -> str:
                 if var_name := match.group(1):
                     text_pre_obj += f"\n{idt}[bold magenta]{var_name}[/bold magenta] ="
             content.append(
-                    rtk.print_as_string(f"{idt}{text_pre_obj!s}", tag=level_label),
-                    )
+                rtk.print_as_string(f"{idt}{text_pre_obj!s}", tag=level_label),
+            )
 
             prev_end_idx = end_idx
             try:
                 content.append(
-                        pretty_rtk.print_as_string(
-                                f"{idt}[grey58]```{type(parsed_object)}[/grey58]",
-                                Pretty(parsed_object,
-                                       indent_size=2,
-                                       margin=4,
-                                       indent_guides=True,
-                                       ),
-                                f"{idt}[grey58]```[/grey58]\n",
-
-                                ),
+                    pretty_rtk.print_as_string(
+                        f"{idt}[grey58]```{type(parsed_object)}[/grey58]"
+                    ),
+                    pretty_rtk.print_as_string(
+                        Pretty(
+                            parsed_object,
+                            indent_size=2,
+                            margin=4,
+                            indent_guides=True,
                         )
+                    ),
+                    pretty_rtk.print_as_string(
+                        f"{idt}[grey58]```[/grey58]\n",
+                    ),
+                )
             except Exception:
                 content.append(rtk.print_as_string(f"{parsed_object}", tag=""))
 
@@ -259,31 +264,31 @@ def _custom_formatter(record: "loguru.Record") -> str:
 
             with suppress(Exception):
                 content.append(
-                        rtk.print_as_string(escape(f"{raw_message}"), tag=level_label)
-                        )
+                    rtk.print_as_string(escape(f"{raw_message}"), tag=level_label)
+                )
 
     record["extra"]["_rendered"] = "\n".join(content)
     return FORMAT_PREFIX + "{extra[_rendered]}\n"
 
 
 def get_logger(
-        logfile: str | Path,
-        level: str = "INFO",
-        sink: TextIO | str | (Message) = sys.stdout,
-        **kwargs,
-        ) -> "loguru.Logger":
+    logfile: str | Path,
+    level: str = "INFO",
+    sink: TextIO | str | (Message) = sys.stdout,
+    **kwargs,
+) -> "loguru.Logger":
     logger.remove()
     logger.add(
-            str(logfile),
-            level="TRACE",
-            colorize=False,
-            )
+        str(logfile),
+        level="TRACE",
+        colorize=False,
+    )
     logger_conf = {
-                          "sink": sink,
-                          "level": level,
-                          "format": _custom_formatter,
-                          "colorize": True,
-                          } | (kwargs or {})
+        "sink": sink,
+        "level": level,
+        "format": _custom_formatter,
+        "colorize": True,
+    } | (kwargs or {})
 
     # pyrefly: ignore [no-matching-overload]
     logger.add(**logger_conf)
@@ -291,12 +296,12 @@ def get_logger(
 
 
 def f4ncy_print(
-        message: str,
-        title: str = "",
-        print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
-        end: str = "\n",
-        **metadata: Any,
-        ) -> None:
+    message: str,
+    title: str = "",
+    print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
+    end: str = "\n",
+    **metadata: Any,
+) -> None:
     r"""Print a formatted message to the console using a customizable print style and theme.
 
     The function supports multiple print styles, including "fancy", "minimal", "bordered",
@@ -337,12 +342,12 @@ def f4ncy_print(
 
 
 def f4ncy_log(
-        message: str,
-        title: str = "",
-        print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
-        end: str = "\n",
-        **metadata: Any,
-        ) -> None:
+    message: str,
+    title: str = "",
+    print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
+    end: str = "\n",
+    **metadata: Any,
+) -> None:
     r"""Print a formatted message to the console using a customizable print style and theme.
 
     The function supports multiple print styles, including "fancy", "minimal", "bordered",
@@ -383,14 +388,14 @@ def f4ncy_log(
 
 def generate_toolkit_theme(print_style) -> RichToolkitTheme:
     theme = RichToolkitTheme(
-            style=_get_print_style(print_style),
-            theme={**CUSTOM_THEME.styles},
-            )
+        style=_get_print_style(print_style),
+        theme={**CUSTOM_THEME.styles},
+    )
     return theme
 
 
 def rtk(
-        print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
-        ) -> Generator[RichToolkit]:
+    print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
+) -> Generator[RichToolkit]:
     with RichToolkit(style=_get_print_style(print_style)) as rtk:
         yield rtk
