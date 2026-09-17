@@ -1,6 +1,7 @@
 import ast
 import sys
 from collections.abc import Generator
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal, TextIO, TYPE_CHECKING
 
@@ -10,13 +11,23 @@ from rich.console import ColorSystem
 from rich.markup import escape
 from rich.pretty import Pretty
 from rich_toolkit import RichToolkit, RichToolkitTheme
-from rich_toolkit.styles import BaseStyle,\
-    BorderedStyle,\
-    FancyStyle,\
-    MinimalStyle,\
-    TaggedStyle
+from rich_toolkit.styles import (
+    BaseStyle,
+    BorderedStyle,
+    FancyStyle,
+    MinimalStyle,
+    TaggedStyle,
+    )
 
-from f4ncy_logs.constants import CUSTOM_THEME, FORMAT_PREFIX, LEVEL_TAG_COLORS, OPENERS
+from f4ncy_logs.constants import (
+    _PARSABLE_OBJECT_TYPES,
+    CUSTOM_THEME,
+    FORMAT_PREFIX,
+    LEVEL_TAG_COLORS,
+    MESSAGE_INDENT,
+    OPENERS,
+    VAR_NAME_PATTERN,
+    )
 
 if TYPE_CHECKING:
     import loguru
@@ -24,10 +35,10 @@ if TYPE_CHECKING:
 logger.remove()  # Remove default handler and prevent duplicate log output.
 
 
-def _get_print_style(print_style: Literal[
-    'borderd', 'minimal', 'fancy', 'tagged', 'base'],
-                     tag_width: int = 12,
-                     ) -> BorderedStyle | MinimalStyle | FancyStyle | TaggedStyle | BaseStyle:
+def _get_print_style(
+        print_style: Literal["borderd", "minimal", "fancy", "tagged", "base"],
+        tag_width: int = MESSAGE_INDENT,
+        ) -> BorderedStyle | MinimalStyle | FancyStyle | TaggedStyle | BaseStyle:
     styles = CUSTOM_THEME.styles
 
     match print_style:
@@ -39,7 +50,7 @@ def _get_print_style(print_style: Literal[
             style = FancyStyle(theme=styles)
         case "tagged":
             style = TaggedStyle(theme=styles, tag_width=tag_width)
-        case 'base':
+        case "base":
             style = BaseStyle(theme=styles)
         case _:
             style = BaseStyle(theme=styles)
@@ -47,12 +58,12 @@ def _get_print_style(print_style: Literal[
     return style
 
 
-def initialize_rich_toolkit_theme(tag_color: str | None = '') -> RichToolkitTheme:
-    theme = {**CUSTOM_THEME.styles}
+def initialize_rich_toolkit_theme(tag_color: str | None = "") -> RichToolkitTheme:
+    theme = CUSTOM_THEME.styles
     if tag_color:
         theme["tag"] = tag_color
     return RichToolkitTheme(
-            style=_get_print_style('tagged'),
+            style=_get_print_style("tagged"),
             theme=theme,
             )
 
@@ -70,8 +81,14 @@ def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
     RichToolkit
         Configured toolkit instance with forced terminal color output.
     """
-    tag_color = LEVEL_TAG_COLORS.get(level_name, "grey89 on grey30",
-                                     ) if level_name else "grey89 on grey30"
+    tag_color = (
+            LEVEL_TAG_COLORS.get(
+                    level_name,
+                    "grey89 on grey30",
+                    )
+            if level_name
+            else "grey89 on grey30"
+    )
     theme = initialize_rich_toolkit_theme(tag_color)
     rich_tkt = RichToolkit(theme=theme)
     rich_tkt.console._force_terminal = True
@@ -79,16 +96,16 @@ def _get_rich_toolkit(level_name: str | None = "") -> RichToolkit:
     return rich_tkt
 
 
-def _find_matching_close(text: str, open_idx: int) -> int | None:
+def _find_closing_bracket(
+        text: str, start_idx: int, opener: str, closer: str,
+        ) -> int | None:
     """Find the index of the closing bracket matching the opener at open_idx.
-
-    Handles nesting and quoted strings (single/double).
 
     Parameters
     ----------
     text : str
         Full message string.
-    open_idx : int
+    start_idx : int
         Index of the opening bracket character.
 
     Returns
@@ -96,124 +113,165 @@ def _find_matching_close(text: str, open_idx: int) -> int | None:
     int or None
         Index of the matching closing bracket, or None if unmatched.
     """
-    opener = text[open_idx]
-    closer = OPENERS[opener]
+    rtk = _get_rich_toolkit()
     depth = 0
-    in_single_quote = False
-    in_double_quote = False
 
-    for idx in range(open_idx, len(text)):
-        char = text[idx]
-        if char == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-        elif char == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
-        if in_single_quote or in_double_quote:
-            continue
+    for idx, char in enumerate(text[start_idx:], start_idx):
         if char == opener:
             depth += 1
         elif char == closer:
-            depth -= 1
+            depth -= 1 if depth > 0 else 0
             if depth == 0:
-                return idx
+                rtk.console.print(f"Depth is 0! {idx = } | {char = }")
+                return idx + 1
 
     return None
 
 
-def _find_complex_span(raw_message: str) -> tuple[int, int, object] | None:
-    """Find the first parseable complex Python literal in raw_message.
+def _find_python_objects_in_message(
+        raw_message: str,
+        ) -> Generator[tuple[int, int, object]]:
+    """Find ALL parseable Python objects in raw_message."""
+    extracted_obj = ""
+    extracted_objs = []
+    start_index = 0
+    end_index = 0
+    opener = ""
+    closer = ""
 
-    Parameters
-    ----------
-    raw_message : str
-        The unformatted log message string.
+    for idx, char in enumerate(raw_message):
+        if opener == "" and char in OPENERS:
+            start_index = idx
+            opener = char
+            closer = OPENERS.get(opener, "")
+            continue
+        elif char != closer:
+            continue
 
-    Returns
-    -------
-    tuple[int, int, object] or None
-        (start_index, end_index_exclusive, parsed_object) or None.
-    """
-    for start_idx, char in enumerate(raw_message):
-        if char not in OPENERS:
+        if not (
+                end_index := _find_closing_bracket(raw_message,
+                                                   start_index,
+                                                   opener,
+                                                   closer,
+                                                   )
+        ):
             continue
-        close_idx = _find_matching_close(raw_message, start_idx)
-        if close_idx is None:
-            continue
-        candidate = raw_message[start_idx: close_idx + 1]
+
+        extracted_obj = raw_message[start_index:end_index]
+
         try:
-            result = ast.literal_eval(candidate)
-            if isinstance(result, (dict, list, tuple, set)):
-                return start_idx, close_idx + 1, result
+            extracted_obj = ast.literal_eval(extracted_obj)
         except (ValueError, SyntaxError):
+            start_index = end_index
             continue
 
-    return None
+        if not isinstance(extracted_obj, _PARSABLE_OBJECT_TYPES):
+            start_index = end_index
+            continue
+
+        yield start_index, end_index, extracted_obj
+
+        start_index = end_index
+        extracted_objs.append(extracted_obj)
+        extracted_obj = ""
+        opener = ""
+        closer = ""
+
+    # yield start_index, end_index, extracted_objs
 
 
 def _custom_formatter(record: "loguru.Record") -> str:
-    """Format a loguru record using RichToolkit for styled terminal output.
-
-    Detects embedded complex Python literals (dict, list, tuple, set) in the
-    message and pretty-prints them via Rich. Plain messages are rendered with
-    the level tag. Exceptions are caught and reported without swallowing.
-
-    Parameters
-    ----------
-    record : loguru.Record
-        The loguru record dict.
-
-    Returns
-    -------
-    str
-        Loguru format string with Rich-rendered message embedded.
-    """
     raw_message: str = record["message"]
+
     level_name: str = record["level"].name
-    level_icon: str = record["level"].icon
-    level_with_icon = f"{level_icon} {level_name}"
-
+    level_icon: str = record["level"].icon if level_name != "WARNING" else "🚨"
+    level_with_icon = f"{level_icon:>1} {level_name:<1}"
+    level_label = f"{level_with_icon:<20}"
+    idt = f"{' ':<2}"
+    last_index = len(raw_message) - 1
     content = []
-    span = _find_complex_span(raw_message)
 
+    rtk = _get_rich_toolkit(level_name)
+    pretty_rtk = RichToolkit(theme=initialize_rich_toolkit_theme(),
+                             style=_get_print_style('borderd'),
+                             )
     try:
-        with _get_rich_toolkit(level_name) as rtk:
-            if span is None:
-                content.append(rtk.print_as_string(raw_message, tag=level_with_icon))
-            else:
-                start_idx, end_idx, parsed_object = span
-                text_before = raw_message[:start_idx].rstrip()
-                text_after = raw_message[end_idx:].lstrip()
-
-                if text_before:
-                    content.append(rtk.print_as_string(text_before, tag=level_with_icon))
+        prev_end_idx = 0
+        started = False
+        for start_idx, end_idx, parsed_object in _find_python_objects_in_message(
+                raw_message,
+                ):
+            if not parsed_object:
                 content.append(
-                        rtk.print_as_string(Pretty(parsed_object, indent_size=4), tag=""),
+                        rtk.print_as_string(f"{idt}{raw_message!s}", tag=level_label)
                         )
-                if text_after:
-                    content.append(rtk.print_as_string(text_after, tag=""))
-    except Exception as formatter_exc:
-        try:
-            with _get_rich_toolkit("ERROR") as rtk:
+                continue
+
+            start_idx = max(start_idx, 0)
+            end_idx = min(end_idx, last_index)
+
+            rtk.console.log(
+                    f"{start_idx=} | {end_idx=} | {prev_end_idx=} | {last_index=}",
+                    )
+            rtk.console.log(
+                    f"{raw_message[start_idx]=} | {raw_message[end_idx]=} | {raw_message[prev_end_idx]=}",
+                    )
+
+            if started:
+                level_label = ""
+            text_pre_obj = raw_message[prev_end_idx:start_idx]
+            match = VAR_NAME_PATTERN.search(text_pre_obj)
+
+            if match:
+                text_pre_obj = text_pre_obj[: match.start()]
+                if var_name := match.group(1):
+                    text_pre_obj += f"\n{idt}[bold magenta]{var_name}[/bold magenta] ="
+            content.append(
+                    rtk.print_as_string(f"{idt}{text_pre_obj!s}", tag=level_label),
+                    )
+
+            prev_end_idx = end_idx
+            try:
                 content.append(
-                        rtk.print_as_string(
-                                f"[error]Formatter error: {formatter_exc}[/error]",
-                                tag="💀 Error",
+                        pretty_rtk.print_as_string(
+                                f"{idt}[grey58]```{type(parsed_object)}[/grey58]",
+                                Pretty(parsed_object,
+                                       indent_size=2,
+                                       margin=4,
+                                       indent_guides=True,
+                                       ),
+                                f"{idt}[grey58]```[/grey58]\n",
+
                                 ),
                         )
-        except Exception as e:
-            print(f"Original error: {formatter_exc}\nLogger had caused an error: {e}",
-                  file=sys.stderr,
-                  )
+            except Exception:
+                content.append(rtk.print_as_string(f"{parsed_object}", tag=""))
+
+            started = True
+        if prev_end_idx < last_index:
+            remaining_message = raw_message[prev_end_idx:last_index]
+            content.append(rtk.print_as_string(f"{idt}{remaining_message!s}", tag=""))
+
+    except Exception:
+        with _get_rich_toolkit("ERROR") as rtk:
+            rtk.console.file = sys.stderr
+            rtk.console.print_exception()
+
+            with suppress(Exception):
+                content.append(
+                        rtk.print_as_string(escape(f"{raw_message}"), tag=level_label)
+                        )
 
     record["extra"]["_rendered"] = "\n".join(content)
     return FORMAT_PREFIX + "{extra[_rendered]}\n"
 
 
-def get_logger(logfile: str | Path,
-               level: str = "INFO",
-               sink: TextIO | str | (Message) = sys.stdout, **kwargs,
-               ) -> "loguru.Logger":
-
+def get_logger(
+        logfile: str | Path,
+        level: str = "INFO",
+        sink: TextIO | str | (Message) = sys.stdout,
+        **kwargs,
+        ) -> "loguru.Logger":
     logger.remove()
     logger.add(
             str(logfile),
@@ -227,16 +285,19 @@ def get_logger(logfile: str | Path,
                           "colorize": True,
                           } | (kwargs or {})
 
+    # pyrefly: ignore [no-matching-overload]
     logger.add(**logger_conf)
     return logger
 
 
-def f4ncy_print(message: str, title: str = '',
-                print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal",
-                end: str = "\n",
-                **metadata: Any,
-                ) -> None:
-    """Print a formatted message to the console using a customizable print style and theme.
+def f4ncy_print(
+        message: str,
+        title: str = "",
+        print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
+        end: str = "\n",
+        **metadata: Any,
+        ) -> None:
+    r"""Print a formatted message to the console using a customizable print style and theme.
 
     The function supports multiple print styles, including "fancy", "minimal", "bordered",
     and "tagged." If a title is provided, it gets printed in bold at the start. Developers
@@ -265,22 +326,24 @@ def f4ncy_print(message: str, title: str = '',
         rtk.console._color_system = ColorSystem.TRUECOLOR
         if title:
             rtk.print_title(f"[bold]{title}[/bold]")
-            if print_style == 'fancy':
+            if print_style == "fancy":
                 rtk.print_line()
         try:
             rtk.console.print(message, end, **metadata)
             rtk.print_line()
-        except Exception as e:
+        except Exception:
             rtk.console.print(escape(str(message)), end, **metadata)
             rtk.print_line()
 
 
-def f4ncy_log(message: str, title: str = '',
-              print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal",
-              end: str = "\n",
-              **metadata: Any,
-              ) -> None:
-    """Print a formatted message to the console using a customizable print style and theme.
+def f4ncy_log(
+        message: str,
+        title: str = "",
+        print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
+        end: str = "\n",
+        **metadata: Any,
+        ) -> None:
+    r"""Print a formatted message to the console using a customizable print style and theme.
 
     The function supports multiple print styles, including "fancy", "minimal", "bordered",
     and "tagged." If a title is provided, it gets printed in bold at the start. Developers
@@ -309,11 +372,11 @@ def f4ncy_log(message: str, title: str = '',
         rtk.console._color_system = ColorSystem.TRUECOLOR
         if title:
             rtk.print_title(f"[bold]{escape(str(title))}[/bold]")
-            if print_style == 'fancy':
+            if print_style == "fancy":
                 rtk.print_line()
         try:
             rtk.console.log(message, end, **metadata)
-        except Exception as e:
+        except Exception:
             rtk.console.log(escape(str(message)), end, **metadata)
         rtk.print_line()
 
@@ -326,7 +389,8 @@ def generate_toolkit_theme(print_style) -> RichToolkitTheme:
     return theme
 
 
-def rtk(print_style: Literal['fancy', 'minimal', 'borderd', 'tagged'] = "minimal", ) ->\
-        Generator[RichToolkit]:
+def rtk(
+        print_style: Literal["fancy", "minimal", "borderd", "tagged"] = "minimal",
+        ) -> Generator[RichToolkit]:
     with RichToolkit(style=_get_print_style(print_style)) as rtk:
         yield rtk
